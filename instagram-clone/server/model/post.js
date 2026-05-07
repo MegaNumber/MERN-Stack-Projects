@@ -1,126 +1,207 @@
 // ============================================================
 // model/post.js - مدل پست (Post Model)
-// ساختار هر پست اینستاگرام را تعریف می‌کند
+// این فایل ساختار داده‌های هر پست را در MongoDB تعریف می‌کند
+// هر پست شامل تصویر، کپشن، لایک‌ها و کامنت‌هاست
 // ============================================================
 
 const mongoose = require('mongoose');
 
-// ۱. تعریف Schema پست
-const postSchema = new mongoose.Schema({
-  // کاربر سازنده پست (ارجاع به مدل User)
+// ============================================================
+// تعریف Schema کامنت (Comment Schema)
+// چون هر پست آرایه‌ای از کامنت‌ها دارد، اول Schema کامنت را تعریف می‌کنیم
+// ============================================================
+const commentSchema = new mongoose.Schema({
+  // کاربری که کامنت را نوشته
   user: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'پست باید یک نویسنده داشته باشد'],
-    index: true                       // ایندکس برای جستجوی سریع
+    ref: 'User', // ارجاع به مدل User
+    required: [true, 'کاربر کامنت مشخص نیست'],
   },
-
-  // متن کپشن
-  caption: {
+  // متن کامنت
+  text: {
     type: String,
-    default: '',
-    maxlength: [2200, 'کپشن نمی‌تواند بیشتر از ۲۲۰۰ کاراکتر باشد']
+    required: [true, 'متن کامنت نمی‌تواند خالی باشد'],
+    maxlength: [500, 'کامنت نمی‌تواند بیشتر از ۵۰۰ کاراکتر باشد'],
+    trim: true, // حذف فاصله‌های اضافی
   },
-
-  // اطلاعات تصویر
-  image: {
-    url: {
-      type: String,
-      required: [true, 'آدرس تصویر الزامی است']
+  // لایک‌های کامنت
+  likes: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
     },
-    publicId: {
-      type: String,
-      required: [true, 'شناسه عمومی تصویر الزامی است']
-    },
-    width: Number,
-    height: Number,
-    format: String,
-    size: Number                      // حجم به بایت
+  ],
+  // تاریخ ایجاد (پیش‌فرض: الان)
+  createdAt: {
+    type: Date,
+    default: Date.now,
   },
+});
 
-  // آرایه لایک‌ها (شناسه کاربرانی که لایک کرده‌اند)
-  likes: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
-
-  // کامنت‌ها
-  comments: [{
+// ============================================================
+// تعریف Schema اصلی پست (Post Schema)
+// ============================================================
+const postSchema = new mongoose.Schema(
+  {
+    // ----------------------------------------------------------
+    // کاربر سازنده پست
+    // ObjectId یعنی یک شناسه یکتا که به مدل User اشاره می‌کند
+    // ----------------------------------------------------------
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: [true, 'پست باید یک نویسنده داشته باشد'],
+      index: true, // ایندکس برای جستجوی سریع‌تر
     },
-    text: {
+
+    // ----------------------------------------------------------
+    // متن کپشن (اختیاری)
+    // ----------------------------------------------------------
+    caption: {
       type: String,
-      required: [true, 'متن کامنت نمی‌تواند خالی باشد'],
-      maxlength: [500, 'کامنت نمی‌تواند بیشتر از ۵۰۰ کاراکتر باشد']
+      default: '',
+      maxlength: [2200, 'کپشن نمی‌تواند بیشتر از ۲۲۰۰ کاراکتر باشد'],
     },
-    likes: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    }],
-    createdAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
 
-  // هشتگ‌ها
-  tags: [String],
+    // ----------------------------------------------------------
+    // اطلاعات تصویر پست
+    // یک شیء که شامل url و publicId در Cloudinary است
+    // ----------------------------------------------------------
+    image: {
+      // آدرس اینترنتی تصویر (لینک Cloudinary)
+      url: {
+        type: String,
+        required: [true, 'آدرس تصویر الزامی است'],
+      },
+      // شناسه عمومی تصویر در Cloudinary (برای حذف تصویر لازم است)
+      publicId: {
+        type: String,
+        required: [true, 'شناسه عمومی تصویر الزامی است'],
+      },
+      // ابعاد تصویر (ذخیره می‌کنیم تا در فرانت‌اند layout مناسب اعمال شود)
+      width: Number,
+      height: Number,
+      // فرمت تصویر (jpg, png, webp و...)
+      format: String,
+      // حجم تصویر به بایت
+      size: Number,
+    },
 
-  // مکان (اختیاری)
-  location: String,
+    // ----------------------------------------------------------
+    // لایک‌ها
+    // آرایه‌ای از ObjectId کاربرانی که پست را لایک کرده‌اند
+    // ----------------------------------------------------------
+    likes: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
 
-  // وضعیت پست (منتشر شده، پیش‌نویس، آرشیو)
-  status: {
-    type: String,
-    enum: ['published', 'draft', 'archived'],
-    default: 'published'
+    // ----------------------------------------------------------
+    // کامنت‌ها
+    // آرایه‌ای از کامنت‌ها با استفاده از commentSchema که بالا تعریف کردیم
+    // ----------------------------------------------------------
+    comments: [commentSchema],
+
+    // ----------------------------------------------------------
+    // هشتگ‌ها (Tags)
+    // آرایه‌ای از رشته‌ها که از کپشن استخراج می‌شوند
+    // مثال: ["#nature", "#photography"]
+    // ----------------------------------------------------------
+    tags: [String],
+
+    // ----------------------------------------------------------
+    // موقعیت مکانی (Location) - اختیاری
+    // ----------------------------------------------------------
+    location: {
+      type: String,
+      default: '',
+    },
+
+    // ----------------------------------------------------------
+    // وضعیت پست
+    // enum یعنی فقط یکی از این مقادیر مجاز است
+    // ----------------------------------------------------------
+    status: {
+      type: String,
+      enum: ['published', 'draft', 'archived'],
+      default: 'published',
+    },
+  },
+  {
+    // timestamps: createdAt و updatedAt خودکار اضافه شوند
+    timestamps: true,
+
+    // toJSON و toObject: virtuals را در خروجی JSON هم نشان بده
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
-
-}, {
-  timestamps: true // createdAt و updatedAt خودکار
-});
+);
 
 // ============================================================
-// Middleware: استخراج خودکار هشتگ‌ها از کپشن
+// Middleware: قبل از ذخیره پست
+// استخراج خودکار هشتگ‌ها از کپشن
 // ============================================================
-postSchema.pre('save', function(next) {
+postSchema.pre('save', function (next) {
+  // اگر کپشن وجود داشته باشد
   if (this.caption) {
-    // پیدا کردن تمام کلماتی که با # شروع می‌شوند
-    // \u0600-\u06FF شامل کاراکترهای فارسی هم می‌شود
+    // match() با Regular Expression همه کلماتی که با # شروع می‌شوند را پیدا می‌کند
+    // \u0600-\u06FF شامل کاراکترهای فارسی هم می‌شود (برای هشتگ فارسی)
     const hashtags = this.caption.match(/#[\w\u0600-\u06FF]+/g);
-    this.tags = hashtags ? [...new Set(hashtags.map(tag => tag.toLowerCase()))] : [];
+
+    // اگر هشتگی پیدا شد
+    if (hashtags) {
+      // Set برای حذف تکراری‌ها، map برای تبدیل به حروف کوچک
+      this.tags = [...new Set(hashtags.map((tag) => tag.toLowerCase()))];
+    } else {
+      this.tags = []; // اگر هشتگی نبود، آرایه خالی
+    }
   }
-  next();
+  next(); // ادامه بده
 });
 
 // ============================================================
-// متدهای کمک‌کننده
+// Virtual Properties (فیلدهای مجازی)
+// این فیلدها در دیتابیس ذخیره نمی‌شوند ولی هنگام خواندن محاسبه می‌شوند
 // ============================================================
-
-// بررسی اینکه یک کاربر پست را لایک کرده یا نه
-postSchema.methods.isLikedBy = function(userId) {
-  return this.likes.includes(userId);
-};
 
 // تعداد کامنت‌ها
-postSchema.virtual('commentsCount').get(function() {
+postSchema.virtual('commentsCount').get(function () {
   return this.comments.length;
 });
 
-// فعال‌سازی virtuals در خروجی JSON
-postSchema.set('toJSON', { virtuals: true });
-postSchema.set('toObject', { virtuals: true });
+// تعداد لایک‌ها
+postSchema.virtual('likesCount').get(function () {
+  return this.likes.length;
+});
 
 // ============================================================
-// ایندکس‌ها
+// متدهای نمونه (Instance Methods)
 // ============================================================
-postSchema.index({ user: 1, createdAt: -1 }); // برای گرفتن پست‌های یک کاربر
-postSchema.index({ tags: 1 });                 // برای جستجوی هشتگ
-postSchema.index({ createdAt: -1 });           // برای مرتب‌سازی
 
+/**
+ * بررسی اینکه یک کاربر خاص این پست را لایک کرده یا نه
+ * @param {string} userId - شناسه کاربر
+ * @returns {boolean}
+ */
+postSchema.methods.isLikedBy = function (userId) {
+  // some() بررسی می‌کند آیا حداقل یک عضو آرایه شرط را دارد
+  // toString() برای مقایسه ObjectId ها لازم است
+  return this.likes.some((id) => id.toString() === userId.toString());
+};
+
+// ============================================================
+// ایندکس‌ها برای بهینه‌سازی کوئری‌ها
+// ============================================================
+postSchema.index({ user: 1, createdAt: -1 }); // پست‌های یک کاربر، جدیدترین اول
+postSchema.index({ tags: 1 }); // جستجوی هشتگ
+postSchema.index({ createdAt: -1 }); // فید پست‌ها، جدیدترین اول
+postSchema.index({ status: 1, createdAt: -1 }); // پست‌های منتشر شده
+
+// ============================================================
+// ساخت مدل Post از Schema
+// ============================================================
 const Post = mongoose.model('Post', postSchema);
 
 module.exports = Post;
