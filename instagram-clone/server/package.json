@@ -1,15 +1,21 @@
 {
   "name": "instagram-clone-server",
   "version": "1.0.0",
-  "description": "Instagram Clone Backend API with Node.js, Express, MongoDB and Cloudinary",
+  "description": "Instagram Clone Backend - Node.js, Express, MongoDB, Cloudinary",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["instagram", "clone", "mern", "social-media"],
-  "author": "MegaNumber",
+  "keywords": [
+    "instagram",
+    "clone",
+    "mern",
+    "social-media",
+    "cloudinary"
+  ],
+  "author": "Your Name",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^2.4.3",
