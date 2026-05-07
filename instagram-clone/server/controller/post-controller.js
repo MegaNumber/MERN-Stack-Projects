@@ -297,4 +297,167 @@ exports.toggleLike = async (req, res) => {
     await post.save();
 
     res.json({
-      success:
+      success: true,
+      isLiked: likeIndex === -1, // true اگر تازه لایک شده
+      likesCount: post.likes.length,
+    });
+  } catch (error) {
+    console.error('❌ خطا در لایک:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ خطا در ثبت لایک',
+    });
+  }
+};
+
+// ============================================================
+// 💬 افزودن کامنت
+// POST /api/posts/:id/comments
+// ============================================================
+exports.addComment = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: '❌ پست یافت نشد',
+      });
+    }
+
+    const { text } = req.body;
+
+    // بررسی خالی نبودن متن
+    if (!text || text.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: '❌ متن کامنت نمی‌تواند خالی باشد',
+      });
+    }
+
+    // اضافه کردن کامنت به آرایه comments
+    post.comments.push({
+      user: req.user.id,
+      text: text.trim(),
+    });
+
+    await post.save();
+
+    // دریافت پست با اطلاعات کامنت جدید
+    const updatedPost = await Post.findById(post._id).populate(
+      'comments.user',
+      'username profilePicture'
+    );
+
+    // آخرین کامنت (همان که الان اضافه شد)
+    const newComment = updatedPost.comments[updatedPost.comments.length - 1];
+
+    res.status(201).json({
+      success: true,
+      message: '💬 کامنت با موفقیت اضافه شد',
+      comment: newComment,
+    });
+  } catch (error) {
+    console.error('❌ خطا در افزودن کامنت:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ خطا در افزودن کامنت',
+    });
+  }
+};
+
+// ============================================================
+// 🗑️ حذف کامنت
+// DELETE /api/posts/:id/comments/:commentId
+// ============================================================
+exports.deleteComment = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: '❌ پست یافت نشد',
+      });
+    }
+
+    // پیدا کردن کامنت در آرایه
+    const comment = post.comments.id(req.params.commentId);
+
+    if (!comment) {
+      return res.status(404).json({
+        success: false,
+        message: '❌ کامنت یافت نشد',
+      });
+    }
+
+    // فقط مالک کامنت یا مالک پست می‌تواند کامنت را حذف کند
+    if (
+      comment.user.toString() !== req.user.id &&
+      post.user.toString() !== req.user.id
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: '⛔ شما مجاز به حذف این کامنت نیستید',
+      });
+    }
+
+    // حذف کامنت
+    comment.deleteOne();
+    await post.save();
+
+    res.json({
+      success: true,
+      message: '🗑️ کامنت حذف شد',
+    });
+  } catch (error) {
+    console.error('❌ خطا در حذف کامنت:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ خطا در حذف کامنت',
+    });
+  }
+};
+
+// ============================================================
+// #️⃣ دریافت پست‌های یک هشتگ
+// GET /api/tags/:tag
+// ============================================================
+exports.getPostsByTag = async (req, res) => {
+  try {
+    // اضافه کردن # به ابتدای تگ
+    const tag = '#' + req.params.tag.toLowerCase();
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+
+    const posts = await Post.find({
+      tags: tag,
+      status: 'published',
+    })
+      .populate('user', 'username profilePicture')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Post.countDocuments({
+      tags: tag,
+      status: 'published',
+    });
+
+    res.json({
+      success: true,
+      count: posts.length,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      posts,
+    });
+  } catch (error) {
+    console.error('❌ خطا در جستجوی هشتگ:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ خطا در جستجو',
+    });
+  }
+};
