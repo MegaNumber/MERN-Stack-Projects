@@ -1,23 +1,60 @@
-import multer from 'multer';
-import { GridFsStorage } from 'multer-gridfs-storage';
-import dotenv from 'dotenv';
+// ============================================================
+// utils/upload.js - پیکربندی Multer برای آپلود فایل
+// Multer یک middleware برای Express است که فایل‌های آپلودی را پردازش می‌کند
+// این فایل تنظیمات ذخیره‌سازی موقت فایل‌ها را مدیریت می‌کند
+// ============================================================
 
-dotenv.config();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-const storage = new GridFsStorage({
-    url: `mongodb://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@insta-clone-shard-00-00.tk3ep.mongodb.net:27017,insta-clone-shard-00-01.tk3ep.mongodb.net:27017,insta-clone-shard-00-02.tk3ep.mongodb.net:27017/?ssl=true&replicaSet=atlas-545t1k-shard-0&authSource=admin&retryWrites=true&w=majority`,
-    options: { useNewUrlParser: true },
-    file: (request, file) => {
-        const match = ["image/png", "image/jpg"];
+// ============================================================
+// ۱. اطمینان از وجود پوشه uploads
+// ============================================================
+// __dirname مسیر پوشه فعلی (utils) است
+// ../ یعنی یک پوشه به عقب (پوشه server)
+const uploadDirectory = path.join(__dirname, '..', 'uploads');
 
-        if(match.indexOf(file.memeType) === -1) 
-            return`${Date.now()}-blog-${file.originalname}`;
+// fs.existsSync چک می‌کند آیا پوشه وجود دارد
+if (!fs.existsSync(uploadDirectory)) {
+  // fs.mkdirSync پوشه را می‌سازد
+  // recursive: true یعنی اگر پوشه‌های والد هم وجود نداشتند، آنها را هم بساز
+  fs.mkdirSync(uploadDirectory, { recursive: true });
+  console.log('📁 پوشه uploads ساخته شد');
+}
 
-        return {
-            bucketName: "photos",
-            filename: `${Date.now()}-blog-${file.originalname}`
-        }
-    }
+// ============================================================
+// ۲. تعریف Storage (محل و نام ذخیره‌سازی)
+// ============================================================
+const storage = multer.diskStorage({
+  // destination: فایل کجا ذخیره شود
+  destination: function (req, file, cb) {
+    // cb(null, path) یعنی "همه چیز خوب است، فایل را اینجا ذخیره کن"
+    cb(null, uploadDirectory);
+  },
+
+  // filename: فایل با چه نامی ذخیره شود
+  filename: function (req, file, cb) {
+    // ساخت یک نام یکتا برای جلوگیری از تداخل نام فایل‌ها
+    // Date.now() زمان فعلی به میلی‌ثانیه
+    // Math.random() یک عدد تصادفی بین ۰ و ۱
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+
+    // path.extname() پسوند فایل را برمی‌گرداند (مثلاً .jpg)
+    const ext = path.extname(file.originalname).toLowerCase();
+
+    // نام نهایی: fieldname-timestamp-random.ext
+    // مثال: image-1700123456789-123456789.jpg
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  },
 });
 
-export default multer({storage}); 
+// ============================================================
+// ۳. فیلتر فایل (File Filter)
+// فقط انواع خاصی از فایل‌ها مجاز هستند
+// ============================================================
+const fileFilter = (req, file, cb) => {
+  // لیست MIME Type های مجاز
+  // MIME Type نوع فایل را مشخص می‌کند
+  const allowedMimeTypes = [
+    '
