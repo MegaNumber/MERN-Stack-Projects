@@ -57,4 +57,40 @@ const fileFilter = (req, file, cb) => {
   // لیست MIME Type های مجاز
   // MIME Type نوع فایل را مشخص می‌کند
   const allowedMimeTypes = [
-    '
+    'image/jpeg',  // JPEG
+    'image/jpg',   // JPG
+    'image/png',   // PNG
+    'image/gif',   // GIF
+    'image/webp',  // WebP (فرمت مدرن گوگل)
+    'image/bmp',   // BMP
+  ];
+
+  // includes() چک می‌کند آیا MIME Type فایل در لیست مجاز هست
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    // فایل مجاز است
+    cb(null, true);
+  } else {
+    // فایل غیرمجاز است - خطا ایجاد کن
+    cb(
+      new Error(
+        `❌ نوع فایل ${file.mimetype} پشتیبانی نمی‌شود. فقط JPEG, PNG, GIF, WebP و BMP مجاز هستند.`
+      ),
+      false
+    );
+  }
+};
+
+// ============================================================
+// ۴. ساخت آبجکت Multer با تنظیمات
+// ============================================================
+const upload = multer({
+  storage: storage,       // محل ذخیره‌سازی (بالا تعریف کردیم)
+  fileFilter: fileFilter, // فیلتر فایل (فقط عکس)
+  limits: {
+    fileSize: 10 * 1024 * 1024, // حداکثر حجم: ۱۰ مگابایت (۱۰ × ۱۰۲۴ × ۱۰۲۴ بایت)
+    files: 1,                   // حداکثر تعداد فایل در هر درخواست: ۱
+  },
+});
+
+// خروجی upload برای استفاده در route ها
+module.exports = upload;
