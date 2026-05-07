@@ -1,32 +1,115 @@
-import express from 'express';
+// ============================================================
+// routes/route.js - تعریف تمام مسیرهای API
+// این فایل مثل تابلو راهنماست که می‌گوید هر درخواست به کجا برود
+// ============================================================
 
-import { loginUser, singupUser } from '../controller/account-controller.js';
-import { getAllUsers, getUser, followUser } from '../controller/user-controller.js';
-import { uploadImage, getImage } from '../controller/image-controller.js';
-import { savePost } from '../controller/post-controller.js';
-
-import upload from '../utils/upload.js';
-
+const express = require('express');
 const router = express.Router();
+const upload = require('../utils/upload');
 
-router.post('/login', loginUser);
-router.post('/signup', singupUser);
+// وارد کردن کنترلرها
+const accountController = require('../account-controller');
+const imageController = require('../image-controller');
+const postController = require('../post-controller');
+const userController = require('../user-controller');
 
-router.get('/users', getAllUsers);
-router.post('/user', getUser);
-router.post('/follow', followUser);
+// وارد کردن میدلور احراز هویت
+const { protect, optionalAuth } = require('../middleware/auth');
 
-router.post('/file/upload', upload.single('file'), uploadImage);
-router.get('/file/:filename', getImage);
+// ══════════════════════════════════════════════
+// مسیرهای عمومی (بدون نیاز به احراز هویت)
+// ══════════════════════════════════════════════
 
-router.post('/post/save', savePost);
-// router.put('/update/:id', authenticateToken, updatePost);
-// router.delete('/delete/:id', authenticateToken, deletePost);
-// router.get('/post/:id', authenticateToken, getPost);
+router.get('/health', (req, res) => {
+  res.json({ status: 'OK', message: 'Server is running' });
+});
 
+// ══════════════════════════════════════════════
+// مسیرهای احراز هویت (Account)
+// ══════════════════════════════════════════════
 
-// router.post('/comment/new', authenticateToken, newComment);
-// router.get('/comments/:id', authenticateToken, getComments);
-// router.delete('/comment/delete/:id', authenticateToken, deleteComment);
+// ثبت‌نام کاربر جدید
+router.post('/register', accountController.register);
 
-export default router;
+// ورود کاربر
+router.post('/login', accountController.login);
+
+// خروج کاربر
+router.post('/logout', protect, accountController.logout);
+
+// بازیابی رمز عبور
+router.post('/forgot-password', accountController.forgotPassword);
+
+// تنظیم مجدد رمز عبور
+router.put('/reset-password/:token', accountController.resetPassword);
+
+// ══════════════════════════════════════════════
+// مسیرهای کاربر (User)
+// ══════════════════════════════════════════════
+
+// دریافت پروفایل کاربر (نسخه عمومی)
+router.get('/users/:username', optionalAuth, userController.getUserProfile);
+
+// دریافت پروفایل خود کاربر (نسخه خصوصی)
+router.get('/me', protect, userController.getMyProfile);
+
+// ویرایش پروفایل
+router.put('/me', protect, userController.updateProfile);
+
+// جستجوی کاربران
+router.get('/search', protect, userController.searchUsers);
+
+// فالو / آنفالو کاربر
+router.put('/users/:id/follow', protect, userController.toggleFollow);
+
+// دریافت فالوورهای یک کاربر
+router.get('/users/:id/followers', userController.getFollowers);
+
+// دریافت فالوینگ‌های یک کاربر
+router.get('/users/:id/following', userController.getFollowing);
+
+// ══════════════════════════════════════════════
+// مسیرهای تصویر (Image)
+// ══════════════════════════════════════════════
+
+// آپلود عکس پروفایل
+router.put('/me/profile-picture', protect, upload.single('image'), imageController.uploadProfilePicture);
+
+// آپلود تصویر پست
+router.post('/upload', protect, upload.single('image'), imageController.uploadImage);
+
+// حذف تصویر
+router.delete('/images/:publicId', protect, imageController.deleteImage);
+
+// ══════════════════════════════════════════════
+// مسیرهای پست (Post)
+// ══════════════════════════════════════════════
+
+// ایجاد پست جدید
+router.post('/posts', protect, upload.single('image'), postController.createPost);
+
+// دریافت فید پست‌ها (با pagination)
+router.get('/posts', optionalAuth, postController.getFeed);
+
+// دریافت یک پست خاص
+router.get('/posts/:id', optionalAuth, postController.getPost);
+
+// ویرایش کپشن پست
+router.put('/posts/:id', protect, postController.updatePost);
+
+// حذف پست
+router.delete('/posts/:id', protect, postController.deletePost);
+
+// لایک / آنلایک پست
+router.put('/posts/:id/like', protect, postController.toggleLike);
+
+// افزودن کامنت
+router.post('/posts/:id/comments', protect, postController.addComment);
+
+// حذف کامنت
+router.delete('/posts/:id/comments/:commentId', protect, postController.deleteComment);
+
+// دریافت پست‌های یک هشتگ
+router.get('/tags/:tag', optionalAuth, postController.getPostsByTag);
+
+module.exports = router;
