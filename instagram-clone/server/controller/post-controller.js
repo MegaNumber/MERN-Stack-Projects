@@ -1,41 +1,45 @@
 // ============================================================
-// post-controller.js - کنترلر مدیریت پست‌ها
+// controller/post-controller.js - کنترلر مدیریت پست‌ها
 // ایجاد، ویرایش، حذف، لایک و کامنت پست‌ها
 // ============================================================
 
-const Post = require('./model/post');
-const User = require('./model/user');
+const Post = require('../model/post');
+const User = require('../model/user');
 const cloudinary = require('cloudinary');
 const fs = require('fs').promises;
 
 // ============================================================
-// 📝 ایجاد پست جدید
+// 📝 ایجاد پست جدید (با آپلود تصویر)
+// POST /api/posts
 // ============================================================
 exports.createPost = async (req, res) => {
   try {
+    // ۱. بررسی وجود فایل تصویر
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: '❌ لطفاً یک تصویر برای پست انتخاب کنید'
+        message: '❌ لطفاً یک تصویر برای پست انتخاب کنید',
       });
     }
 
-    // آپلود به Cloudinary
+    console.log(`📝 ایجاد پست با تصویر: ${req.file.originalname}`);
+
+    // ۲. آپلود تصویر به Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
       folder: 'instagram-clone/posts',
       transformation: [
         { width: 1080, crop: 'limit' },
         { quality: 'auto:good' },
-        { fetch_format: 'auto' }
-      ]
+        { fetch_format: 'auto' },
+      ],
     });
 
-    // حذف فایل موقت
+    // ۳. حذف فایل موقت
     await fs.unlink(req.file.path);
 
-    // ساخت پست جدید
+    // ۴. ساخت پست جدید در دیتابیس
     const newPost = new Post({
-      user: req.user.id,
+      user: req.user.id, // از میدلور protect می‌آید
       caption: req.body.caption || '',
       location: req.body.location || '',
       image: {
@@ -44,79 +48,92 @@ exports.createPost = async (req, res) => {
         width: result.width,
         height: result.height,
         format: result.format,
-        size: result.bytes
-      }
+        size: result.bytes,
+      },
     });
 
+    // ۵. ذخیره پست
     await newPost.save();
 
-    // افزایش شمارنده پست‌های کاربر
+    // ۶. افزایش شمارنده پست‌های کاربر
+    // $inc یعنی increase - یکی به postsCount اضافه کن
     await User.findByIdAndUpdate(req.user.id, { $inc: { postsCount: 1 } });
 
-    // populate کاربر برای برگرداندن اطلاعات کامل
-    const populatedPost = await Post.findById(newPost._id)
-      .populate('user', 'username profilePicture');
+    // ۷. populate برای برگرداندن اطلاعات کامل کاربر همراه پست
+    // populate مثل JOIN در SQL است - اطلاعات کاربر را هم ضمیمه می‌کند
+    const populatedPost = await Post.findById(newPost._id).populate(
+      'user',
+      'username fullName profilePicture'
+    );
 
     res.status(201).json({
       success: true,
       message: '🎉 پست با موفقیت منتشر شد',
-      post: populatedPost
+      post: populatedPost,
     });
-
   } catch (error) {
     console.error('❌ خطا در ایجاد پست:', error);
-    
+
+    // پاکسازی فایل
     if (req.file) {
-      try { await fs.unlink(req.file.path); } catch (e) { /* ignore */ }
+      try {
+        await fs.unlink(req.file.path);
+      } catch (e) {
+        /* ignore */
+      }
     }
 
     res.status(500).json({
       success: false,
-      message: '❌ خطا در ایجاد پست'
+      message: '❌ خطا در ایجاد پست',
     });
   }
 };
 
 // ============================================================
-// 📋 دریافت فید پست‌ها
+// 📋 دریافت فید پست‌ها (با صفحه‌بندی)
+// GET /api/posts?page=1&limit=10
 // ============================================================
 exports.getFeed = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    // ۱. دریافت پارامترهای صفحه‌بندی از query string
+    const page = parseInt(req.query.page) || 1; // اگر page نبود، صفحه ۱
+    const limit = parseInt(req.query.limit) || 10; // اگر limit نبود، ۱۰ تا
+    const skip = (page - 1) * limit; // چند تا رد کنیم
 
-    // دریافت پست‌ها با اطلاعات کاربر و مرتب‌سازی نزولی
+    // ۲. دریافت پست‌ها از دیتابیس
     const posts = await Post.find({ status: 'published' })
-      .populate('user', 'username fullName profilePicture')
-      .populate('comments.user', 'username profilePicture')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+      .populate('user', 'username fullName profilePicture') // اطلاعات کاربر
+      .populate('comments.user', 'username profilePicture') // اطلاعات کامنت‌گذاران
+      .sort({ createdAt: -1 }) // جدیدترین اول
+      .skip(skip) // skip کردن برای صفحه‌بندی
+      .limit(limit); // محدودیت تعداد
 
+    // ۳. شمارش کل پست‌ها
     const total = await Post.countDocuments({ status: 'published' });
 
+    // ۴. پاسخ با اطلاعات صفحه‌بندی
     res.json({
       success: true,
       count: posts.length,
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      hasMore: page < Math.ceil(total / limit),
-      posts
+      hasMore: page < Math.ceil(total / limit), // آیا صفحه بعدی هست؟
+      posts,
     });
-
   } catch (error) {
     console.error('❌ خطا در دریافت پست‌ها:', error);
     res.status(500).json({
       success: false,
-      message: '❌ خطا در دریافت پست‌ها'
+      message: '❌ خطا در دریافت پست‌ها',
     });
   }
 };
 
 // ============================================================
 // 🔍 دریافت یک پست خاص
+// GET /api/posts/:id
 // ============================================================
 exports.getPost = async (req, res) => {
   try {
@@ -127,26 +144,35 @@ exports.getPost = async (req, res) => {
     if (!post) {
       return res.status(404).json({
         success: false,
-        message: '❌ پست یافت نشد'
+        message: '❌ پست یافت نشد',
       });
     }
 
     res.json({
       success: true,
-      post
+      post,
     });
-
   } catch (error) {
     console.error('❌ خطا در دریافت پست:', error);
+
+    // اگر id فرمت نامعتبری داشته باشد
+    if (error.kind === 'ObjectId') {
+      return res.status(404).json({
+        success: false,
+        message: '❌ پست یافت نشد',
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: '❌ خطا در دریافت پست'
+      message: '❌ خطای سرور',
     });
   }
 };
 
 // ============================================================
 // ✏️ ویرایش کپشن پست
+// PUT /api/posts/:id
 // ============================================================
 exports.updatePost = async (req, res) => {
   try {
@@ -155,39 +181,46 @@ exports.updatePost = async (req, res) => {
     if (!post) {
       return res.status(404).json({
         success: false,
-        message: '❌ پست یافت نشد'
+        message: '❌ پست یافت نشد',
       });
     }
 
-    // فقط مالک می‌تواند ویرایش کند
+    // فقط مالک پست می‌تواند ویرایش کند
+    // toString() برای مقایسه ObjectId ها لازم است
     if (post.user.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: '⛔ شما مجاز به ویرایش این پست نیستید'
+        message: '⛔ شما مجاز به ویرایش این پست نیستید',
       });
     }
 
-    post.caption = req.body.caption || post.caption;
-    post.location = req.body.location || post.location;
+    // به‌روزرسانی فیلدها
+    if (req.body.caption !== undefined) {
+      post.caption = req.body.caption;
+    }
+    if (req.body.location !== undefined) {
+      post.location = req.body.location;
+    }
+
     await post.save();
 
     res.json({
       success: true,
       message: '✅ پست با موفقیت ویرایش شد',
-      post
+      post,
     });
-
   } catch (error) {
     console.error('❌ خطا در ویرایش پست:', error);
     res.status(500).json({
       success: false,
-      message: '❌ خطا در ویرایش پست'
+      message: '❌ خطا در ویرایش پست',
     });
   }
 };
 
 // ============================================================
 // 🗑️ حذف پست
+// DELETE /api/posts/:id
 // ============================================================
 exports.deletePost = async (req, res) => {
   try {
@@ -196,7 +229,7 @@ exports.deletePost = async (req, res) => {
     if (!post) {
       return res.status(404).json({
         success: false,
-        message: '❌ پست یافت نشد'
+        message: '❌ پست یافت نشد',
       });
     }
 
@@ -204,35 +237,36 @@ exports.deletePost = async (req, res) => {
     if (post.user.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: '⛔ شما مجاز به حذف این پست نیستید'
+        message: '⛔ شما مجاز به حذف این پست نیستید',
       });
     }
 
-    // حذف تصویر از Cloudinary
+    // ۱. حذف تصویر از Cloudinary
+    console.log(`🗑️ حذف تصویر: ${post.image.publicId}`);
     await cloudinary.uploader.destroy(post.image.publicId);
 
-    // حذف پست از دیتابیس
+    // ۲. حذف پست از دیتابیس
     await Post.findByIdAndDelete(req.params.id);
 
-    // کاهش شمارنده پست‌های کاربر
+    // ۳. کاهش شمارنده پست‌های کاربر
     await User.findByIdAndUpdate(req.user.id, { $inc: { postsCount: -1 } });
 
     res.json({
       success: true,
-      message: '🗑️ پست با موفقیت حذف شد'
+      message: '🗑️ پست با موفقیت حذف شد',
     });
-
   } catch (error) {
     console.error('❌ خطا در حذف پست:', error);
     res.status(500).json({
       success: false,
-      message: '❌ خطا در حذف پست'
+      message: '❌ خطا در حذف پست',
     });
   }
 };
 
 // ============================================================
 // ❤️ لایک / آنلایک پست
+// PUT /api/posts/:id/like
 // ============================================================
 exports.toggleLike = async (req, res) => {
   try {
@@ -241,170 +275,26 @@ exports.toggleLike = async (req, res) => {
     if (!post) {
       return res.status(404).json({
         success: false,
-        message: '❌ پست یافت نشد'
+        message: '❌ پست یافت نشد',
       });
     }
 
     const userId = req.user.id;
+
+    // indexOf موقعیت userId در آرایه likes را برمی‌گرداند
+    // اگر نباشد، -1 برمی‌گردد
     const likeIndex = post.likes.indexOf(userId);
 
     if (likeIndex === -1) {
-      // لایک
+      // کاربر لایک نکرده → لایک کن
       post.likes.push(userId);
     } else {
-      // آنلایک
+      // کاربر قبلاً لایک کرده → آنلایک کن
+      // splice(index, 1) یعنی از index یک عنصر حذف کن
       post.likes.splice(likeIndex, 1);
     }
 
     await post.save();
 
     res.json({
-      success: true,
-      isLiked: likeIndex === -1,
-      likesCount: post.likes.length
-    });
-
-  } catch (error) {
-    console.error('❌ خطا در لایک:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ خطا در ثبت لایک'
-    });
-  }
-};
-
-// ============================================================
-// 💬 افزودن کامنت
-// ============================================================
-exports.addComment = async (req, res) => {
-  try {
-    const post = await Post.findById(req.params.id);
-
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: '❌ پست یافت نشد'
-      });
-    }
-
-    const { text } = req.body;
-    if (!text || text.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        message: '❌ متن کامنت نمی‌تواند خالی باشد'
-      });
-    }
-
-    post.comments.push({
-      user: req.user.id,
-      text: text.trim()
-    });
-
-    await post.save();
-
-    // برگرداندن کامنت اضافه شده با اطلاعات کاربر
-    const updatedPost = await Post.findById(post._id)
-      .populate('comments.user', 'username profilePicture');
-
-    const newComment = updatedPost.comments[updatedPost.comments.length - 1];
-
-    res.status(201).json({
-      success: true,
-      message: '💬 کامنت اضافه شد',
-      comment: newComment
-    });
-
-  } catch (error) {
-    console.error('❌ خطا در افزودن کامنت:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ خطا در افزودن کامنت'
-    });
-  }
-};
-
-// ============================================================
-// 🗑️ حذف کامنت
-// ============================================================
-exports.deleteComment = async (req, res) => {
-  try {
-    const post = await Post.findById(req.params.id);
-
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: '❌ پست یافت نشد'
-      });
-    }
-
-    const comment = post.comments.id(req.params.commentId);
-
-    if (!comment) {
-      return res.status(404).json({
-        success: false,
-        message: '❌ کامنت یافت نشد'
-      });
-    }
-
-    // فقط مالک کامنت یا مالک پست می‌تواند حذف کند
-    if (comment.user.toString() !== req.user.id && post.user.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: '⛔ شما مجاز به حذف این کامنت نیستید'
-      });
-    }
-
-    comment.deleteOne();
-    await post.save();
-
-    res.json({
-      success: true,
-      message: '🗑️ کامنت حذف شد'
-    });
-
-  } catch (error) {
-    console.error('❌ خطا در حذف کامنت:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ خطا در حذف کامنت'
-    });
-  }
-};
-
-// ============================================================
-// #️⃣ دریافت پست‌های یک هشتگ
-// ============================================================
-exports.getPostsByTag = async (req, res) => {
-  try {
-    const tag = '#' + req.params.tag.toLowerCase();
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-
-    const posts = await Post.find({ 
-      tags: tag, 
-      status: 'published' 
-    })
-      .populate('user', 'username profilePicture')
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
-
-    const total = await Post.countDocuments({ tags: tag, status: 'published' });
-
-    res.json({
-      success: true,
-      count: posts.length,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
-      posts
-    });
-
-  } catch (error) {
-    console.error('❌ خطا در جستجوی هشتگ:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ خطا در جستجو'
-    });
-  }
-};
+      success:
