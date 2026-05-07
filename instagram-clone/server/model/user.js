@@ -1,166 +1,244 @@
 // ============================================================
 // model/user.js - مدل کاربر (User Model)
-// این فایل مشخص می‌کند هر کاربر چه اطلاعاتی دارد
-// مثل یک فرم ثبت‌نام که فیلدهایش را اینجا تعریف می‌کنیم
+// این فایل ساختار داده‌های کاربر را در MongoDB تعریف می‌کند
+// Schema مثل یک قالب است که مشخص می‌کند هر کاربر چه فیلدهایی دارد
 // ============================================================
 
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');   // برای رمزنگاری پسورد
-const validator = require('validator'); // برای اعتبارسنجی ایمیل
+// وارد کردن کتابخانه‌های مورد نیاز
+const mongoose = require('mongoose');      // برای کار با MongoDB
+const bcrypt = require('bcryptjs');        // برای رمزنگاری (هش کردن) پسورد
+const validator = require('validator');    // برای اعتبارسنجی ایمیل و داده‌ها
 
-// ۱. تعریف Schema (طرحواره) کاربر
-const userSchema = new mongoose.Schema({
-  // نام کاربری - یکتا و الزامی
-  username: {
-    type: String,
-    required: [true, 'نام کاربری الزامی است'],
-    unique: true,
-    trim: true,                        // حذف فاصله‌های اضافی اول و آخر
-    minlength: [3, 'نام کاربری باید حداقل ۳ کاراکتر باشد'],
-    maxlength: [30, 'نام کاربری نمی‌تواند بیشتر از ۳۰ کاراکتر باشد'],
-    // فقط حروف انگلیسی، اعداد، زیرخط و نقطه مجاز است
-    match: [/^[a-zA-Z0-9._]+$/, 'نام کاربری فقط می‌تواند شامل حروف، اعداد، نقطه و زیرخط باشد']
-  },
-
-  // ایمیل - یکتا و الزامی
-  email: {
-    type: String,
-    required: [true, 'ایمیل الزامی است'],
-    unique: true,
-    lowercase: true,                   // ذخیره به صورت حروف کوچک
-    validate: [validator.isEmail, 'لطفاً یک ایمیل معتبر وارد کنید']
-  },
-
-  // رمز عبور - حداقل ۶ کاراکتر
-  password: {
-    type: String,
-    required: [true, 'رمز عبور الزامی است'],
-    minlength: [6, 'رمز عبور باید حداقل ۶ کاراکتر باشد'],
-    select: false                      // هنگام دریافت اطلاعات کاربر، پسورد برگردانده نشود
-  },
-
-  // نام کامل (اختیاری)
-  fullName: {
-    type: String,
-    default: '',
-    maxlength: [50, 'نام کامل نمی‌تواند بیشتر از ۵۰ کاراکتر باشد']
-  },
-
-  // بیوگرافی (اختیاری)
-  bio: {
-    type: String,
-    default: '',
-    maxlength: [150, 'بیوگرافی نمی‌تواند بیشتر از ۱۵۰ کاراکتر باشد']
-  },
-
-  // عکس پروفایل (از Cloudinary)
-  profilePicture: {
-    url: {
+// ============================================================
+// تعریف Schema (طرحواره) کاربر
+// new mongoose.Schema({...}) یک Schema جدید می‌سازد
+// داخل {} تمام فیلدهای کاربر را تعریف می‌کنیم
+// ============================================================
+const userSchema = new mongoose.Schema(
+  {
+    // ----------------------------------------------------------
+    // نام کاربری (Username)
+    // - type: String یعنی از نوع متن است
+    // - required: true یعنی حتماً باید وارد شود
+    // - unique: true یعنی نمی‌تواند تکراری باشد
+    // - trim: true یعنی فاصله‌های اضافی اول و آخر حذف شوند
+    // - minlength/maxlength: حداقل و حداکثر طول
+    // - match: الگوی مجاز (فقط حروف، اعداد، نقطه و زیرخط)
+    // ----------------------------------------------------------
+    username: {
       type: String,
-      default: 'https://res.cloudinary.com/dxpglsfmf/image/upload/default-avatar.png'
+      required: [true, 'نام کاربری الزامی است'],
+      unique: true,
+      trim: true,
+      minlength: [3, 'نام کاربری باید حداقل ۳ کاراکتر باشد'],
+      maxlength: [30, 'نام کاربری نمی‌تواند بیشتر از ۳۰ کاراکتر باشد'],
+      // Regular Expression: فقط حروف انگلیسی، اعداد، نقطه و زیرخط
+      match: [
+        /^[a-zA-Z0-9._]+$/,
+        'نام کاربری فقط می‌تواند شامل حروف انگلیسی، اعداد، نقطه و زیرخط باشد',
+      ],
     },
-    publicId: {
+
+    // ----------------------------------------------------------
+    // ایمیل (Email)
+    // - lowercase: true یعنی خودکار به حروف کوچک تبدیل شود
+    // - validate: validator.isEmail چک می‌کند ایمیل معتبر باشد
+    // ----------------------------------------------------------
+    email: {
       type: String,
-      default: ''
-    }
+      required: [true, 'ایمیل الزامی است'],
+      unique: true,
+      lowercase: true,
+      validate: [validator.isEmail, 'لطفاً یک ایمیل معتبر وارد کنید'],
+    },
+
+    // ----------------------------------------------------------
+    // رمز عبور (Password)
+    // - select: false یعنی وقتی کاربر را از دیتابیس می‌خوانیم،
+    //   پسورد برگردانده نشود (امنیتی)
+    // ----------------------------------------------------------
+    password: {
+      type: String,
+      required: [true, 'رمز عبور الزامی است'],
+      minlength: [6, 'رمز عبور باید حداقل ۶ کاراکتر باشد'],
+      select: false, // پسورد در کوئری‌ها برگردانده نشود
+    },
+
+    // ----------------------------------------------------------
+    // نام کامل (Full Name) - اختیاری
+    // ----------------------------------------------------------
+    fullName: {
+      type: String,
+      default: '',
+      maxlength: [50, 'نام کامل نمی‌تواند بیشتر از ۵۰ کاراکتر باشد'],
+    },
+
+    // ----------------------------------------------------------
+    // بیوگرافی (Bio) - اختیاری
+    // ----------------------------------------------------------
+    bio: {
+      type: String,
+      default: '',
+      maxlength: [150, 'بیوگرافی نمی‌تواند بیشتر از ۱۵۰ کاراکتر باشد'],
+    },
+
+    // ----------------------------------------------------------
+    // عکس پروفایل (Profile Picture)
+    // یک شیء که url و publicId تصویر در Cloudinary را نگه می‌دارد
+    // ----------------------------------------------------------
+    profilePicture: {
+      url: {
+        type: String,
+        default: '', // پیش‌فرض خالی
+      },
+      publicId: {
+        type: String,
+        default: '', // شناسه تصویر در Cloudinary
+      },
+    },
+
+    // ----------------------------------------------------------
+    // وب‌سایت (Website) - اختیاری
+    // ----------------------------------------------------------
+    website: {
+      type: String,
+      default: '',
+    },
+
+    // ----------------------------------------------------------
+    // تعداد پست‌های کاربر (Posts Count)
+    // با هر پست جدید یکی اضافه می‌شود
+    // ----------------------------------------------------------
+    postsCount: {
+      type: Number,
+      default: 0,
+    },
+
+    // ----------------------------------------------------------
+    // فالوورها (Followers)
+    // آرایه‌ای از ObjectId های کاربران
+    // ref: 'User' یعنی به همان مدل User اشاره می‌کند
+    // ----------------------------------------------------------
+    followers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+
+    // ----------------------------------------------------------
+    // فالوینگ‌ها (Following) - کسانی که کاربر دنبال می‌کند
+    // ----------------------------------------------------------
+    following: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+
+    // ----------------------------------------------------------
+    // وضعیت حساب (isActive)
+    // اگر false باشد کاربر نمی‌تواند وارد شود
+    // ----------------------------------------------------------
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    // ----------------------------------------------------------
+    // نقش کاربر (Role) - برای سطح دسترسی
+    // enum: یعنی فقط مقادیر 'user' یا 'admin' مجاز است
+    // ----------------------------------------------------------
+    role: {
+      type: String,
+      enum: ['user', 'admin'],
+      default: 'user',
+    },
+
+    // ----------------------------------------------------------
+    // توکن بازیابی رمز عبور و زمان انقضای آن
+    // ----------------------------------------------------------
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
   },
-
-  // وب‌سایت (اختیاری)
-  website: {
-    type: String,
-    default: ''
-  },
-
-  // تعداد پست‌های کاربر
-  postsCount: {
-    type: Number,
-    default: 0
-  },
-
-  // فالوورها (آرایه‌ای از شناسه کاربران)
-  followers: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
-
-  // فالوینگ‌ها (کسانی که دنبال می‌کنیم)
-  following: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
-
-  // وضعیت حساب کاربری
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-
-  // نقش کاربر (برای مدیریت دسترسی‌ها)
-  role: {
-    type: String,
-    enum: ['user', 'admin'],           // فقط این دو مقدار مجاز است
-    default: 'user'
-  },
-
-  // تاریخ آخرین ورود
-  lastLogin: {
-    type: Date,
-    default: null
-  },
-
-  // توکن بازیابی رمز عبور
-  resetPasswordToken: String,
-  resetPasswordExpire: Date,
-
-}, {
-  // timestamps: خودکار createdAt و updatedAt را اضافه می‌کند
-  timestamps: true
-});
+  {
+    // timestamps: true باعث می‌شود mongoose خودکار
+    // دو فیلد createdAt و updatedAt را اضافه کند
+    timestamps: true,
+  }
+);
 
 // ============================================================
-// Middleware های Mongoose
+// Middleware (قلاب) قبل از ذخیره‌سازی
+// .pre('save', ...) یعنی قبل از اینکه کاربر ذخیره شود، این کد اجرا شود
 // ============================================================
-
-// قبل از ذخیره (save) کاربر، پسورد را رمزنگاری کن
-userSchema.pre('save', async function(next) {
-  // اگر پسورد تغییر نکرده باشد، به مرحله بعد برو
+userSchema.pre('save', async function (next) {
+  // isModified('password') چک می‌کند آیا فیلد password تغییر کرده یا نه
+  // اگر تغییر نکرده باشد (مثلاً فقط bio را ویرایش کرده)، پسورد را هش نمی‌کنیم
   if (!this.isModified('password')) {
-    return next();
+    return next(); // برو به مرحله بعد
   }
 
   try {
-    // تولید salt (نمک) با پیچیدگی ۱۲
+    // genSalt(12) یک "نمک" تصادفی با پیچیدگی ۱۲ می‌سازد
+    // هرچه عدد بزرگتر، امن‌تر اما کندتر. ۱۲ یک مقدار استاندارد است
     const salt = await bcrypt.genSalt(12);
-    // هش کردن پسورد با salt
+
+    // hash() پسورد را با salt ترکیب کرده و هش می‌کند
+    // حالا حتی اگر دو کاربر پسورد یکسان داشته باشند، هش آنها متفاوت است
     this.password = await bcrypt.hash(this.password, salt);
-    next();
+
+    next(); // برو به مرحله بعد (ذخیره در دیتابیس)
   } catch (error) {
-    next(error);
+    next(error); // اگر خطایی بود، به مدیریت خطا بفرست
   }
 });
 
 // ============================================================
 // متدهای نمونه (Instance Methods)
+// این متدها روی هر نمونه (document) از کاربر قابل استفاده هستند
 // ============================================================
 
-// مقایسه پسورد وارد شده با پسورد ذخیره شده
-userSchema.methods.comparePassword = async function(enteredPassword) {
+/**
+ * مقایسه پسورد وارد شده با پسورد ذخیره شده
+ * این متد برای ورود کاربر استفاده می‌شود
+ * 
+ * @param {string} enteredPassword - پسوردی که کاربر وارد کرده
+ * @returns {boolean} - true اگر پسوردها مطابقت داشته باشند
+ */
+userSchema.methods.comparePassword = async function (enteredPassword) {
+  // bcrypt.compare پسورد ساده را با هش مقایسه می‌کند
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// تولید توکن JWT برای کاربر
-userSchema.methods.generateAuthToken = function() {
+/**
+ * تولید توکن JWT (JSON Web Token)
+ * توکن مثل یک کارت شناسایی دیجیتال است که به کاربر می‌دهیم
+ * 
+ * @returns {string} - توکن JWT امضا شده
+ */
+userSchema.methods.generateAuthToken = function () {
+  // در اینجا require می‌کنیم چون ممکن است همه جا نیاز نباشد
   const jwt = require('jsonwebtoken');
-  
+
+  // jwt.sign() یک توکن جدید می‌سازد
   return jwt.sign(
-    { id: this._id, role: this.role },  // Payload
-    process.env.JWT_SECRET,              // کلید مخفی
-    { expiresIn: process.env.JWT_EXPIRE || '30d' } // زمان انقضا
+    // Payload: اطلاعاتی که داخل توکن ذخیره می‌شود
+    { id: this._id, role: this.role },
+    // Secret: کلید مخفی برای امضا کردن توکن
+    process.env.JWT_SECRET,
+    // Options: تنظیمات مثل زمان انقضا
+    { expiresIn: process.env.JWT_EXPIRE || '30d' }
   );
 };
 
-// برگرداندن اطلاعات عمومی کاربر (بدون اطلاعات حساس)
-userSchema.methods.toPublicJSON = function() {
+/**
+ * برگرداندن اطلاعات عمومی کاربر (بدون اطلاعات حساس)
+ * این متد برای پاسخ به کلاینت استفاده می‌شود
+ * 
+ * @returns {Object} - اطلاعات عمومی کاربر
+ */
+userSchema.methods.toPublicJSON = function () {
   return {
     id: this._id,
     username: this.username,
@@ -172,19 +250,24 @@ userSchema.methods.toPublicJSON = function() {
     postsCount: this.postsCount,
     followersCount: this.followers.length,
     followingCount: this.following.length,
-    createdAt: this.createdAt
+    isActive: this.isActive,
+    createdAt: this.createdAt,
   };
 };
 
 // ============================================================
-// ایندکس‌ها برای جستجوی سریع‌تر
+// ایندکس‌ها (Indexes)
+// ایندکس‌ها جستجو در دیتابیس را سریع‌تر می‌کنند
 // ============================================================
-userSchema.index({ username: 1 });
-userSchema.index({ email: 1 });
+userSchema.index({ username: 1 }); // ایندکس روی username برای جستجوی سریع
+userSchema.index({ email: 1 }); // ایندکس روی email برای جستجوی سریع
 
 // ============================================================
-// ساخت و خروجی مدل
+// ساخت مدل از Schema
+// mongoose.model() یک مدل از روی Schema می‌سازد
+// 'User' نام مدل است (معادل collection 'users' در MongoDB)
 // ============================================================
 const User = mongoose.model('User', userSchema);
 
+// خروجی مدل برای استفاده در کنترلرها
 module.exports = User;
